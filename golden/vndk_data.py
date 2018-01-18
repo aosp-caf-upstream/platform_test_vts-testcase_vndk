@@ -25,6 +25,9 @@ LL_NDK = "LL-NDK"
 # LL-NDK dependencies that vendor modules cannot directly access.
 LL_NDK_INDIRECT = "LL-NDK-Indirect"
 
+# Same-process HAL implementation in vendor partition.
+SP_HAL = "SP-HAL"
+
 # Same-process NDK libraries that can be used by framework and vendor modules.
 SP_NDK = "SP-NDK"
 
@@ -49,6 +52,9 @@ VNDK_SP_INDIRECT_PRIVATE = "VNDK-SP-Indirect-Private"
 # search for longest prefix.
 _ABI_NAMES = ("arm64", "arm", "mips64", "mips", "x86_64", "x86")
 
+# The name of the data directory for devices with no VNDK version.
+_DEFAULT_VNDK_VERSION = "P"
+
 # The data directory.
 _GOLDEN_DIR = os.path.join("vts", "testcases", "vndk", "golden")
 
@@ -72,7 +78,8 @@ def GetAbiDumpDirectory(data_file_path, version, abi_name):
         return None
 
     dump_dir = os.path.join(data_file_path, _GOLDEN_DIR,
-                            version if version else "current", abi_dir)
+                            version if version else _DEFAULT_VNDK_VERSION,
+                            abi_dir)
 
     if not os.path.isdir(dump_dir):
         logging.warning("%s is not a directory.", dump_dir)
@@ -91,17 +98,18 @@ def LoadVndkLibraryLists(data_file_path, version, *tags):
 
     Returns:
         A tuple of lists containing library names. Each list corresponds to
-        one tag in the argument.
+        one tag in the argument. For SP-HAL, the returned names are regular
+        expressions.
         None if the spreadsheet for the version is not found.
     """
-
     path = os.path.join(data_file_path, _GOLDEN_DIR,
-                        version if version else "current", "eligible-list.csv")
+                        version if version else _DEFAULT_VNDK_VERSION,
+                        "eligible-list.csv")
     if not os.path.isfile(path):
         logging.warning("Cannot load %s.", path)
         return None
 
-    dir_suffix = "-" + version if version and version != "current" else ""
+    dir_suffix = "-" + version if version else ""
     vndk_lists = tuple([] for x in tags)
     with open(path) as csv_file:
         # Skip header
@@ -110,8 +118,10 @@ def LoadVndkLibraryLists(data_file_path, version, *tags):
         for cells in reader:
             for tag_index, tag in enumerate(tags):
                 if tag == cells[1]:
-                    versioned_dir = cells[0].replace("${VER}", dir_suffix)
+                    lib_name = cells[0].replace("${VNDK_VER}", dir_suffix)
+                    if lib_name.startswith("[regex]"):
+                        lib_name = lib_name[len("[regex]"):]
                     vndk_lists[tag_index].extend(
-                        versioned_dir.replace("${LIB}", lib)
+                        lib_name.replace("${LIB}", lib)
                         for lib in ("lib", "lib64"))
     return vndk_lists
